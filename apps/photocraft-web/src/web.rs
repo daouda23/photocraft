@@ -82,6 +82,21 @@ pub fn start() {
                     PhotocraftApp::setup_context(&cc.egui_ctx, ThemeKind::Pro);
                     let inbox: Inbox = Arc::default();
                     let place_inbox: Inbox = Arc::default();
+                    // GLOUU : l'image à ouvrir au démarrage, donnée par l'adresse (?ouvrir=<adresse>&nom=<fichier>).
+                    // Elle entre par la même file que les fichiers glissés dans la fenêtre.
+                    if let Some(adresse) = param(&q, "ouvrir") {
+                        let nom = param(&q, "nom").unwrap_or_else(|| "glouu.png".into());
+                        let (file, ctx) = (inbox.clone(), cc.egui_ctx.clone());
+                        wasm_bindgen_futures::spawn_local(async move {
+                            match fetch_bytes(&adresse, None).await {
+                                Ok(octets) => {
+                                    file.lock().unwrap_or_else(|e| e.into_inner()).push((nom, octets));
+                                    ctx.request_repaint();
+                                }
+                                Err(e) => log::error!("GLOUU : image à ouvrir introuvable ({adresse}) : {e}"),
+                            }
+                        });
+                    }
                     let served: Served = Arc::default();
                     load_font_manifest(served.clone(), cc.egui_ctx.clone());
                     let (session, warnings) = crate::preset_bridge::session(presets.clone());
@@ -192,6 +207,11 @@ fn guard_unload(unsaved: Arc<AtomicBool>) {
     if window.add_event_listener_with_callback("beforeunload", cb.as_ref().unchecked_ref()).is_ok() {
         cb.forget();
     }
+}
+
+/// GLOUU : la valeur d'une option de l'adresse (`?ouvrir=…`), décodée.
+fn param(query: &str, nom: &str) -> Option<String> {
+    web_sys::UrlSearchParams::new_with_str(query).ok()?.get(nom).filter(|v| !v.is_empty())
 }
 
 fn query() -> String {
