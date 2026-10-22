@@ -395,19 +395,51 @@ pub fn t(s: &str) -> &str {
     tr(current(), s)
 }
 
+/// The name the app shows. A rebranded build sets `APP_DISPLAY_NAME` at compile time
+/// (`APP_DISPLAY_NAME=ImagO trunk build`): every UI string then says it instead of "PhotoCraft",
+/// in every language. Without it nothing changes.
+pub const APP_NAME: &str = match option_env!("APP_DISPLAY_NAME") {
+    Some(name) => name,
+    None => "PhotoCraft",
+};
+
+/// English strings that name the original project (its website and repository): they keep
+/// "PhotoCraft" in a rebranded build, so the links still say where they lead.
+const ORIGINAL_PROJECT: [&str; 3] = ["PhotoCraft Website", "PhotoCraft website", "PhotoCraft on GitHub"];
+
+/// `s` with "PhotoCraft" replaced by [`APP_NAME`] in a rebranded build. A rewritten string is
+/// interned once, so it can be borrowed like a catalog entry.
+fn branded(s: &str) -> &str {
+    if APP_NAME == "PhotoCraft" || !s.contains("PhotoCraft") {
+        return s;
+    }
+    static SEEN: OnceLock<std::sync::Mutex<std::collections::HashMap<String, &'static str>>> = OnceLock::new();
+    let mut seen = SEEN.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(done) = seen.get(s) {
+        return *done;
+    }
+    let done: &'static str = Box::leak(s.replace("PhotoCraft", APP_NAME).into_boxed_str());
+    seen.insert(s.to_string(), done);
+    done
+}
+
 /// Translate an English UI string; unknown strings come back unchanged.
 pub fn tr(lang: Lang, s: &str) -> &str {
-    lang.catalog().plain(s).unwrap_or(s)
+    let text = lang.catalog().plain(s).unwrap_or(s);
+    if ORIGINAL_PROJECT.contains(&s) { text } else { branded(text) }
 }
 
 /// Like [`tr`], for an English string that needs a disambiguating `context`.
 pub fn tr_ctx<'a>(lang: Lang, context: &str, s: &'a str) -> &'a str {
-    lang.catalog().contextual(context, s).unwrap_or_else(|| tr(lang, s))
+    lang.catalog().contextual(context, s).map(branded).unwrap_or_else(|| tr(lang, s))
 }
 
 /// A string keyed by its command id, falling back to the translation of the English `label`.
 pub fn tr_id<'a>(lang: Lang, id: &str, label: &'a str) -> &'a str {
-    lang.catalog().id(id).unwrap_or_else(|| tr(lang, label))
+    if ORIGINAL_PROJECT.contains(&label) {
+        return lang.catalog().id(id).unwrap_or_else(|| tr(lang, label));
+    }
+    lang.catalog().id(id).map(branded).unwrap_or_else(|| tr(lang, label))
 }
 
 /// Fill `{name}` placeholders. Unknown placeholders are left as written.
@@ -423,7 +455,7 @@ pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
 pub fn trn(lang: Lang, n: u64, one: &str, other: &str) -> String {
     let idx = (lang.0.plural)(n);
     let text = lang.catalog().plural(one, other, idx).unwrap_or(if n == 1 { one } else { other });
-    fmt(text, &[("n", &n.to_string())])
+    fmt(branded(text), &[("n", &n.to_string())])
 }
 
 #[cfg(test)]
