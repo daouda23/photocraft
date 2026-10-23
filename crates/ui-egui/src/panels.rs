@@ -643,7 +643,8 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 if lead > 0.0 {
                     ui.add_space(lead + 4.0);
                 }
-                if !system {
+                // A rebranded build leaves out PhotoCraft's mark (the kitsune) from its title bar.
+                if !system && crate::i18n::APP_NAME == "PhotoCraft" {
                     let side = if t.pro { 18.0 } else { 20.0 };
                     let (mark, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
                     crate::brand::paint_mark(ui, mark);
